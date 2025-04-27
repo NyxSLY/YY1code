@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Aging-Related Chromatin Structure Analysis Code
 
 This repository contains core code for analyzing chromatin structure changes during aging, including Hi-C, RNA-seq, and ChIP-seq data processing and analysis. This code collection is provided for reference purposes only.
