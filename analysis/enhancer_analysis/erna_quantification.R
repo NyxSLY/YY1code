@@ -1,0 +1,209 @@
+---
+title: "readcount of eRNA"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=F}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(reshape2)
+library(tidyr)
+library(ggplot2)
+library(cowplot)
+source(file.path('D:\\BaiduNetdiskWorkspace/OneDrive/scripts/R/rain_cloud/example_plot_code.r', '..',"halfViolinPlots.R"))
+```
+
+
+```{r cars}
+fread('eRNA_count') -> erna
+fread('eRNA_count_control') -> control
+
+fread('eRNA_count_se_and_control') -> all
+all[,c(1, 6:12)] -> all
+colnames(all) = c('id', 'length', 'rep1_y', 'rep2_y', 'rep3_y',
+                   'rep1_o', 'rep2_o', 'rep3_o')
+
+apply(all[,3:8], 2, sum) -> col_sum
+
+# calculate FPKM - not FPKM, it is tpm here
+# data.frame(t(t(all[,3:8])/col_sum)*10^6/(all$length/1000)) -> fpkm
+# rownames(fpkm) = all$id
+
+fpk = all[,3:8]/all$length*1000
+#apply(fpk, 2, sum) -> fpk_sum
+#data.frame(t(t(fpk)/fpk_sum)*10^6) -> tpm
+#fpkm = tpm
+
+fpkm = fpk
+
+rownames(fpkm) = all$id
+
+control.fpkm = fpkm[grepl('control', rownames(fpkm)),]
+eRNA.fpkm = fpkm[!grepl('control', rownames(fpkm)),]
+
+
+boxplot(eRNA.fpkm,outline=F)
+boxplot(control.fpkm,outline=F)
+
+
+hist(eRNA.fpkm$rep1_y)
+
+boxplot(eRNA.fpkm$rep2_y/eRNA.fpkm$rep2_o, outline=F)
+abline(h=1)
+```
+
+violin plots
+
+```{r}
+
+colnames(control.fpkm) = paste0(colnames(control.fpkm), '_control')
+gather(eRNA.fpkm, key, value) -> eRNA.fpkm.long
+gather(control.fpkm, key, value) -> control.fpkm.long
+
+eRNA.fpkm.long$group = 'eRNA'
+control.fpkm.long$group = 'control'
+
+rbind(eRNA.fpkm.long, control.fpkm.long) -> fpkm.long
+
+fpkm.long$key = factor(fpkm.long$key, levels = c(colnames(eRNA.fpkm), colnames(control.fpkm)) )
+
+
+fpkm.long$tag_new <- ifelse(grepl("_y_control", fpkm.long$key), "young_control", 
+                            ifelse(grepl("_o_control", fpkm.long$key), "old_control", 
+                                   ifelse(grepl("_y", fpkm.long$key), "young", "old")))
+
+# compute lower and upper whiskers
+ylim1 = boxplot.stats(fpkm.long$value)$stats[c(1, 5)]
+
+ylim2 = boxplot.stats(fpkm.long[fpkm.long$group=='eRNA',]$value)$stats[c(1, 5)]
+
+# make the plot
+p <- ggplot(fpkm.long, aes(x=tag_new, y=value, fill=tag_new)) + 
+  geom_boxplot(outlier.shape = NA) + 
+  geom_jitter(position = position_jitter(width = 0.2), alpha = 0.1, size=0.01) + 
+  # geom_smooth(alpha=0.5, se=FALSE) + 
+  coord_cartesian(ylim = ylim2*1.1) + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  scale_colour_brewer(palette = "Set2") +
+  scale_fill_brewer(palette = "Set2")
+
+# Log transform the value column with log(x+1) during data preparation
+fpkm.long$value_log1p <- log1p(fpkm.long$value)
+
+# Use the updated data column value_log1p to plot the graph
+p <- ggplot(fpkm.long, aes(x=tag_new, y=value_log1p, color=tag_new, fill=tag_new)) + 
+    #geom_jitter(aes(color=tag_new), position = position_jitter(width = 0.2, height = 2), alpha = 0.5, size=0.1) +  # Scatter plot settings
+  geom_violin(trim=FALSE, adjust=2, width=0.8, color='black', alpha=0.7) +  # Violin plot settings
+  theme_classic() + 
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    legend.position = "none"  # Hide legend
+  ) + 
+  scale_colour_brewer(palette = "Set2") +
+  scale_fill_brewer(palette = "Set2")
+
+
+ggsave("violin.jpg", p, width = 10, height = 6, units = "in", dpi = 300)
+
+# p <- ggplot(fpkm.long, aes(x=tag_new, y=log2(value), fill=tag_new)) + geom_violin(outlier.shape = NA) + theme_classic() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + scale_colour_brewer(palette = "Set2") +
+#   scale_fill_brewer(palette = "Set2");p
+
+getwd()
+
+wilcox.test(fpkm.long[fpkm.long$tag_new=='young',]$value, 
+            fpkm.long[fpkm.long$tag_new=='young_control',]$value) -> p1
+t.test(fpkm.long[fpkm.long$tag_new=='young',]$value, 
+            fpkm.long[fpkm.long$tag_new=='young_control',]$value) -> p1
+
+
+p1$p.value
+
+wilcox.test(fpkm.long[fpkm.long$tag_new=='old',]$value, 
+            fpkm.long[fpkm.long$tag_new=='old_control',]$value) -> p2
+
+t.test(fpkm.long[fpkm.long$tag_new=='old',]$value, 
+            fpkm.long[fpkm.long$tag_new=='old_control',]$value) -> p2
+
+p2$p.value
+
+# student T-test results
+# t.test(eRNA.fpkm, control.fpkm)
+
+
+# save to powerpoint!!!!
+library(officer)
+library(rvg)
+#library(mschart)
+
+my_vec_graph <- dml(code = print(p))
+read_pptx() %>%
+    add_slide(layout = "Title and Content", master = "Office Theme") %>%
+    ph_with(my_vec_graph, ph_location_fullsize()) %>% 
+    print(target = 'eRNA_count_violinplot.pptx')
+
+```
+
+
+
+# Recount, using new control
+# The new GTF is divided into 2 parts:
+# - Non-exon part in the new super enhancers
+# - Control part
+```{r}
+fread('/Volumes/luyang-1/work/MSC_RNA-seq_2020/mapping/q30/fpkm.csv') -> gene_fpkm
+
+gene_fpkm = gene_fpkm[,c(3:6)]
+
+
+
+boxplot(gene_fpkm[apply(gene_fpkm,1,max)>1,], outline=F, ylim=c(0,60))
+
+
+apply(gene_fpkm[apply(gene_fpkm,1,max)>1,], 2, median)
+
+
+```
+
+
+
+
+
+
+
+   
+   
+   
+# sample
+```{r}
+# create a dummy data frame with outliers
+df = data.frame(y = c(-100, rnorm(100), 100))
+
+# create boxplot that includes outliers
+p0 = ggplot(df, aes(y = y)) + geom_boxplot(aes(x = factor(1)))
+
+
+# compute lower and upper whiskers
+ylim1 = boxplot.stats(df$y)$stats[c(1, 5)]
+
+# scale y limits based on ylim1
+p1 = p0 + coord_cartesian(ylim = ylim1*1.05)
+
+p0
+p1
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
